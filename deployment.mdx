@@ -1,7 +1,7 @@
 ---
-title: "Deploy Kunna MCP Client with Docker"
+title: "Deploy Kunna MCP Client with Docker and nginx on Port 5173"
 sidebarTitle: "Deployment"
-description: "Build a production Docker image of Kunna MCP Client using a multi-stage Vite + nginx build, then run the container on port 5173."
+description: "Build a production Docker image of Kunna MCP Client using a multi-stage Vite + nginx build, then run the container and open the app on port 5173."
 ---
 
 The project ships a **multi-stage Dockerfile** that compiles the React SPA with Vite and serves the resulting static bundle with nginx on port 5173. The entire build is self-contained — no external build servers or CI pipelines are required. A single `docker build` command produces a lean, production-ready image based on `nginx:stable-alpine`.

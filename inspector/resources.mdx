@@ -1,7 +1,7 @@
 ---
-title: "Browsing MCP Server Resources"
+title: "Browsing and Discovering Resources on an MCP Server"
 sidebarTitle: "Resources"
-description: "Understand how Kunna MCP Client discovers and displays the resources exposed by an MCP server after the initialize handshake."
+description: "Learn how Kunna MCP Client discovers and surfaces the resources exposed by an MCP server automatically after the initialize handshake."
 ---
 
 MCP servers can expose resources — contextual data objects identified by URI that clients can load to supply background information to a language model. Resources are distinct from tools and prompts: rather than being actions to invoke or templates to render, they are passive data items that a client reads. After a successful connection, Kunna automatically calls `listResources()` and records whatever the server returns so the data is available for inspection.

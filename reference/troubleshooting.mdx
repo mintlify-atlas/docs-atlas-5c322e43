@@ -9,12 +9,12 @@ Most issues with Kunna MCP Client come down to three categories: CORS policy blo
 ## Common Connection Issues
 
 <AccordionGroup>
-  <Accordion title='"Failed to fetch" or network error on connect'>
-    **Symptom:** Clicking Connect produces an `← error` line in the activity console that includes `"Failed to fetch"` or `"fetch failed"`. The error banner on the page reads something like:
+  <Accordion title='"Failed to fetch", "fetch failed", or TypeError on connect'>
+    **Symptom:** Clicking Connect produces an `← error` line in the activity console that includes `"Failed to fetch"`, `"fetch failed"`, or a `TypeError`. The error banner on the page reads something like:
 
     > *"Failed to fetch. Esto suele deberse a un error de red o a que el servidor remoto no tiene configurado CORS para permitir peticiones desde este origen web."*
 
-    **Cause:** The browser is blocking the outgoing MCP request because the target server's HTTP response does not include an `Access-Control-Allow-Origin` header that permits the origin from which Kunna is served. This is enforced by the browser's Cross-Origin Resource Sharing (CORS) policy and cannot be overridden from the client side.
+    **Cause:** The browser is blocking the outgoing MCP request because the target server's HTTP response does not include an `Access-Control-Allow-Origin` header that permits the origin from which Kunna is served. This is enforced by the browser's Cross-Origin Resource Sharing (CORS) policy and cannot be overridden from the client side. Kunna extends the error message when the caught error message contains `"Failed to fetch"` or `"fetch failed"`, or when `e.name === "TypeError"` — all three are signatures of browser-level network/CORS rejections.
 
     **Fix:**
 

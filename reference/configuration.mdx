@@ -1,7 +1,7 @@
 ---
-title: "Configuration Reference for Kunna MCP Client"
+title: "Kunna MCP Client Full Configuration Reference Guide"
 sidebarTitle: "Configuration"
-description: "All configurable aspects of Kunna MCP Client — Vite dev server, build output, Docker port mapping, and nginx SPA routing."
+description: "All configurable aspects of Kunna MCP Client — Vite dev server, production build, Docker port mapping, and nginx SPA routing setup."
 ---
 
 Kunna MCP Client has no runtime environment variables or dotenv files — all configuration lives in `vite.config.js` (build tooling), `Dockerfile` (containerization), and `nginx.conf` (static serving). There is no server process to configure at runtime; the application is a fully static single-page app once built. This page documents every configuration point and explains the reasoning behind each choice.

@@ -1,7 +1,7 @@
 ---
-title: "Inspecting and Calling Tools and Prompts"
+title: "Inspecting and Calling MCP Server Tools and Prompts"
 sidebarTitle: "Tools & Prompts"
-description: "Select a tool or prompt from the sidebar, fill in its auto-generated form or enter raw JSON, and execute it to see the server's response."
+description: "Select a tool or prompt from the sidebar, fill in its auto-generated parameter form or enter raw JSON, and execute it against the server."
 ---
 
 After connecting to an MCP server, the inspector lists every tool and prompt the server exposes in the left sidebar. Selecting any item opens a detail panel on the right with the item's description and an auto-generated parameter form built directly from the item's JSON Schema or argument definitions — no manual configuration required.
@@ -41,7 +41,7 @@ The inspector maps each field's resolved type to a specific widget so that value
 
 ## Required vs optional fields
 
-Fields whose names appear in the `inputSchema`'s `required` array are marked with an **obligatorio** badge next to the field name. When you click **Llamar a la tool** or **Obtener prompt**, the `coerceValues()` function validates every field before the request is dispatched. If a required field is empty, validation throws an error immediately — no network request is made — and a red error banner is displayed below the run button with the message `El campo «<name>» es obligatorio`.
+Fields whose names appear in the `inputSchema`'s `required` array are marked with an **obligatorio** badge next to the field name. When you click **Llamar a la tool** or **Obtener prompt**, the `coerceValues()` function validates every field before the request is dispatched. If a required field is empty, validation throws an error immediately — no network request is made — and a red error banner is displayed below the run button with the message `El campo «<name>» es obligatorio`. The one exception is `boolean` fields: because they default to `"false"` and are always rendered as a dropdown, they can never truly be empty and are therefore exempt from the required-field check.
 
 Optional fields may be left blank; blank optional fields are simply omitted from the arguments object sent to the server.
 

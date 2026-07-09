@@ -1,5 +1,5 @@
 ---
-title: "Using the Activity Console in the Inspector"
+title: "Using the Activity Console in the Kunna MCP Inspector"
 sidebarTitle: "Activity Console"
 description: "The activity console logs every MCP request and response in real time, giving you a timestamped audit trail of all inspector activity."
 ---
@@ -52,7 +52,7 @@ Clearing the log is purely cosmetic — it does not affect the active connection
 
 ## Error messages
 
-When a connection attempt or call throws an exception, the inspector checks the error message before logging it. If the message contains `"Failed to fetch"` or `"fetch failed"`, or if the error's `name` is `"TypeError"`, the inspector appends a plain-language explanation:
+When a connection attempt or call throws an exception, the inspector checks the error before logging it. If the message contains `"Failed to fetch"` or `"fetch failed"`, or if the error's `name` property is `"TypeError"`, the inspector appends a plain-language explanation:
 
 > *Esto suele deberse a un error de red o a que el servidor remoto no tiene configurado CORS para permitir peticiones desde este origen web.*
 
