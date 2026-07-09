@@ -1,0 +1,87 @@
+---
+title: "Inspecting and Calling Tools and Prompts"
+sidebarTitle: "Tools & Prompts"
+description: "Select a tool or prompt from the sidebar, fill in its auto-generated form or enter raw JSON, and execute it to see the server's response."
+---
+
+After connecting to an MCP server, the inspector lists every tool and prompt the server exposes in the left sidebar. Selecting any item opens a detail panel on the right with the item's description and an auto-generated parameter form built directly from the item's JSON Schema or argument definitions — no manual configuration required.
+
+## Tools
+
+Tools are server-side actions that a language model (or the inspector itself) can invoke. Each tool object returned by the server contains three fields:
+
+- **`name`** — the identifier used when calling the tool.
+- **`description`** — a human-readable summary shown in the detail panel.
+- **`inputSchema`** — a JSON Schema object that describes the expected arguments.
+
+When you select a tool, the inspector passes its `inputSchema` to the `schemaToFields()` helper. This function iterates over `schema.properties`, reads each property's `type`, `description`, `enum`, `default`, and whether it appears in `schema.required`, and returns a flat array of field descriptors used to render the form.
+
+## Prompts
+
+Prompts are reusable instruction templates that compose a structured message for a language model. Each prompt object contains:
+
+- **`name`** — the identifier used when fetching the prompt.
+- **`description`** — a human-readable summary.
+- **`arguments`** — an array of argument descriptors, each with a `name`, optional `description`, and optional `required` flag.
+
+When you select a prompt, the inspector passes its `arguments` array to `promptArgsToFields()`. Because prompt arguments carry no explicit type information, every field produced by this function is treated as a `string` — a text input is always rendered regardless of the argument's semantic meaning.
+
+## Form fields by type
+
+The inspector maps each field's resolved type to a specific widget so that values are entered in the most appropriate format and validated before the request is sent.
+
+| Type | Widget |
+|---|---|
+| `string` | Text input |
+| `number` / `integer` | Number input |
+| `boolean` | Dropdown with `true` and `false` options |
+| `enum` | Dropdown populated with the enum values from the schema |
+| `object` | JSON textarea (placeholder `{ ... }`) |
+| `array` | JSON textarea (placeholder `[ ... ]`) |
+
+## Required vs optional fields
+
+Fields whose names appear in the `inputSchema`'s `required` array are marked with an **obligatorio** badge next to the field name. When you click **Llamar a la tool** or **Obtener prompt**, the `coerceValues()` function validates every field before the request is dispatched. If a required field is empty, validation throws an error immediately — no network request is made — and a red error banner is displayed below the run button with the message `El campo «<name>» es obligatorio`.
+
+Optional fields may be left blank; blank optional fields are simply omitted from the arguments object sent to the server.
+
+## Raw JSON mode
+
+For advanced use cases you can bypass the generated form entirely. Clicking **Editar como JSON** above the form replaces all the individual field widgets with a single `textarea` pre-filled with `{}`. You can type or paste any valid JSON object directly into this textarea.
+
+To return to the structured form, click **← Volver al formulario**. Note that any values you typed in raw mode are not carried back into the individual form fields — the form resets to its initial state.
+
+<Tip>
+  Use raw JSON mode when a tool expects a nested object or array that is difficult to express through the structured form — for example, a tool that takes a `filters` parameter containing multiple nested conditions.
+</Tip>
+
+## Viewing the inputSchema
+
+A collapsible **Ver inputSchema** disclosure element appears at the bottom of each tool's detail panel (it is not shown for prompts, which use an arguments array rather than a JSON Schema). Expanding it reveals the complete raw `inputSchema` JSON formatted with two-space indentation. This is useful when you need to understand exactly what the server expects, including constraints such as `minimum`, `maximum`, `pattern`, or `additionalProperties` that the form does not expose as separate UI controls.
+
+## Executing
+
+Once the form is filled in (or raw JSON is ready), click the action button:
+
+- **Llamar a la tool** — dispatches `McpConnection.callTool(name, args)`, which calls `client.callTool({ name, arguments: args })` on the underlying SDK client.
+- **Obtener prompt** — dispatches `McpConnection.getPrompt(name, args)`, which calls `client.getPrompt({ name, arguments: args })`.
+
+While the request is in flight the button label changes to **Ejecutando…** and the button is disabled to prevent duplicate submissions. The activity console simultaneously emits a `→ CALL` or `→ PROMPT` entry with the tool/prompt name and the serialized arguments.
+
+When the response arrives, the result is stored in state and rendered as formatted JSON below the button under a **Resultado** label. A `← ok respuesta recibida` entry is added to the activity console. If the call fails, a red error banner replaces the result block and a `← error` entry is logged.
+
+A typical successful tool call result looks like this:
+
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Building: Library A | Sensor: CO2 | Value: 412 ppm"
+    }
+  ],
+  "isError": false
+}
+```
+
+The `content` array follows the MCP content block format. Each block has a `type` (usually `"text"`) and the corresponding payload. The `isError` field indicates whether the server itself flagged the result as an error — a `true` value here means the tool executed but returned an application-level error, which is distinct from a transport or protocol failure.

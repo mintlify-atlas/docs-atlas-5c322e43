@@ -1,47 +1,79 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Kunna MCP Client"
+sidebarTitle: "Quickstart"
+description: "Clone the repo, install dependencies, and connect to your first MCP server in under five minutes using the Kunna MCP Client dev server."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through running the Kunna MCP Client inspector locally and connecting it to a live MCP server. By the end you will have the Vite development server running at `http://localhost:5173`, the inspector open in your browser, and a successful MCP handshake with a server of your choice.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone the repository">
+    Clone the project from GitHub and move into the project directory:
 
     ```bash
-    npm install your-package
+    git clone https://github.com/vancovx/KunnaClienteMCP.git && cd KunnaClienteMCP
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Install dependencies">
+    Install all Node.js dependencies declared in `package.json`:
 
     ```bash
-    your-cli init
+    npm install
     ```
+
+    Node.js **18 or higher** is required. The project uses ES modules (`"type": "module"` in `package.json`), so older Node versions are not supported.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Start the development server">
+    Start Vite in development mode:
 
     ```bash
-    your-cli start
+    npm run dev
     ```
+
+    Vite starts on **`http://localhost:5173`** with Hot Module Replacement (HMR) enabled. Any change you save to a source file is reflected in the browser immediately without a full reload.
+  </Step>
+
+  <Step title="Open the Inspector">
+    Navigate to **`http://localhost:5173`** in your browser. From the top navigation bar, click **Inspector** to open the MCP inspection panel.
+  </Step>
+
+  <Step title="Connect to an MCP server">
+    Fill in the connection form that appears in the Inspector:
+
+    1. **Transport** — choose `HTTP` (Streamable HTTP) or `SSE` depending on what your server supports.
+    2. **URL** — enter the full endpoint, for example `http://localhost:3001/mcp`.
+    3. **Auth** — select `None` if the server is unauthenticated, or select `Bearer` and paste a token if the server requires it.
+    4. Click **Connect**.
+
+    The client performs the MCP handshake, then calls `listTools`, `listPrompts`, and `listResources` automatically. The results appear in the sidebar within seconds.
+  </Step>
+
+  <Step title="Explore capabilities">
+    After a successful handshake, the sidebar is populated with everything the server exposes: **tools**, **prompts**, and **resources**. Click any item to open its detail panel. For tools and prompts, a dynamic form is generated from the item's JSON Schema — fill in the fields and click the execute button to call the server and view the formatted response in the activity console.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Typical workflow with the Kunna Server
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+If you are using the companion Kunna MCP server alongside this client, the recommended workflow is:
+
+1. Start the Kunna MCP server — it listens by default at **`http://localhost:3000/mcp`**.
+2. Open the Inspector, select **HTTP** transport, enter `http://localhost:3000/mcp` as the URL, choose **Bearer** auth, and supply the server's `MCP_AUTH_TOKEN`. In development mode the server skips token verification, so auth is not strictly required.
+3. Explore the available tools — including `search-campus-buildings`, `query-data`, and `query-aggregation` — as well as the IoT report prompts exposed by the server.
+4. Select any tool or prompt, fill in the generated form (or switch to raw JSON mode), and execute directly from the browser. Review the formatted result and inspect the raw request/response pair in the activity console.
+
+## Available npm scripts
+
+| Script | Description |
+|---|---|
+| `dev` | Start the Vite development server with HMR at `http://localhost:5173` |
+| `build` | Compile and bundle the app for production into the `dist/` directory |
+| `preview` | Serve the production build locally for a pre-deploy sanity check |
+| `lint` | Run ESLint across all source files |
+| `build-docker` | Build the Docker image tagged `kunnaclientemcp-frontend:latest` |
+
+<Tip>
+  If the connection attempt fails with a network error, the cause is almost always **CORS**. The MCP server must explicitly allow the origin from which the client is served (e.g. `http://localhost:5173` during development). On the Kunna server this is configured with the `CORS_ALLOWED_ORIGINS` environment variable.
 </Tip>

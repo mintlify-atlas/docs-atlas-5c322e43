@@ -1,0 +1,109 @@
+---
+title: "Deploy Kunna MCP Client with Docker"
+sidebarTitle: "Deployment"
+description: "Build a production Docker image of Kunna MCP Client using a multi-stage Vite + nginx build, then run the container on port 5173."
+---
+
+The project ships a **multi-stage Dockerfile** that compiles the React SPA with Vite and serves the resulting static bundle with nginx on port 5173. The entire build is self-contained — no external build servers or CI pipelines are required. A single `docker build` command produces a lean, production-ready image based on `nginx:stable-alpine`.
+
+## Docker build
+
+The Dockerfile uses two stages. The first stage uses `node:20-alpine` to install dependencies and run `vite build`, producing a compiled bundle in `dist/`. The second stage copies only that `dist/` output into an `nginx:stable-alpine` image alongside the custom `nginx.conf`, resulting in a minimal final image with no Node.js runtime.
+
+```dockerfile
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+FROM nginx:stable-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 5173
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**Stage 1 — `builder`:** Starts from `node:20-alpine`, installs all npm dependencies, copies the full source tree, and runs `vite build` to emit the optimised bundle into `dist/`.
+
+**Stage 2 — nginx:** Starts from `nginx:stable-alpine`, copies the compiled `dist/` directory into nginx's document root (`/usr/share/nginx/html`), replaces the default nginx configuration with the project's `nginx.conf`, exposes port 5173, and starts nginx in the foreground.
+
+## Build and run
+
+<Steps>
+  <Step title="Build the Docker image">
+    Run the following command from the project root. The `npm run build-docker` script is an alias for the same `docker build` invocation:
+
+    ```bash
+    docker build . -t kunnaclientemcp-frontend:latest
+    # equivalent shorthand:
+    npm run build-docker
+    ```
+  </Step>
+
+  <Step title="Run the container">
+    Start the container and map the nginx port to your host:
+
+    ```bash
+    docker run -p 5173:5173 kunnaclientemcp-frontend:latest
+    ```
+  </Step>
+
+  <Step title="Open the app">
+    Open **`http://localhost:5173`** in your browser. The Kunna MCP Client inspector is now being served from the Docker container.
+  </Step>
+</Steps>
+
+## nginx configuration
+
+The custom `nginx.conf` configures a single virtual server that listens on port **5173** and serves static files from `/usr/share/nginx/html` — the directory where the Vite bundle was placed during the Docker build. The critical `try_files $uri $uri/ /index.html` directive ensures that any URL path unknown to nginx (i.e. any client-side route managed by react-router-dom) falls back to `index.html`, allowing the React application to handle routing entirely in the browser. A matching `error_page 404` directive applies the same fallback for 404 responses.
+
+```nginx
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    server {
+        listen 5173;
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        error_page 404 /index.html;
+    }
+}
+```
+
+## Production build without Docker
+
+If you prefer to manage your own web server, you can build the static bundle directly and preview it locally before deploying:
+
+```bash
+# Compile and bundle for production
+npm run build
+
+# Serve the production bundle locally for review
+npm run preview
+```
+
+`npm run build` writes the optimised output to `dist/`. `npm run preview` starts Vite's built-in preview server so you can verify the production build behaves correctly before copying `dist/` to your hosting environment of choice.
+
+## Environment and CORS
+
+<Warning>
+  Kunna MCP Client runs **entirely in the browser** — there is no backend proxy. Every request to an MCP server is made directly from the user's browser. This means any MCP server the client connects to must respond with the appropriate `Access-Control-Allow-Origin` CORS headers for the origin where the client is hosted. If CORS is not configured on the server, the browser will block all requests and the connection will fail, regardless of whether the server URL is correct.
+</Warning>

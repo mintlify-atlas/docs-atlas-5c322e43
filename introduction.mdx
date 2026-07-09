@@ -1,0 +1,78 @@
+---
+title: "Kunna MCP Client: Generic Web Inspector for MCP Servers"
+sidebarTitle: "Introduction"
+description: "Kunna MCP Client is a React + Vite web app that connects to any MCP server, auto-discovers its tools, prompts, and resources, and lets you execute them from the browser."
+---
+
+Kunna MCP Client is a browser-based inspector and client built on **React 19 + Vite** that speaks the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) over both Streamable HTTP and SSE transports. Because it targets the protocol rather than any particular server implementation, it is completely protocol-agnostic — point it at any conforming MCP server and it immediately discovers what that server can do. Originally developed as the client layer for a campus IoT data project, it doubles as a general-purpose debugging and exploration tool for anyone building or operating MCP servers.
+
+## What it does
+
+<CardGroup cols={2}>
+  <Card title="Connect to any MCP server" icon="plug">
+    Enter a server URL, choose the transport (Streamable HTTP or SSE), and optionally supply a Bearer token. Kunna MCP Client performs the MCP handshake and maintains a single active connection.
+  </Card>
+  <Card title="Auto-discover capabilities" icon="magnifying-glass">
+    Immediately after the handshake, the client calls `listTools`, `listPrompts`, and `listResources` and populates the sidebar with everything the server exposes — no manual configuration required.
+  </Card>
+  <Card title="Dynamic JSON Schema forms" icon="file-code">
+    For every tool or prompt, the client generates a live form directly from the item's `inputSchema`. Required fields, type validation, enums, and booleans are all handled automatically. A raw JSON mode is also available for advanced use cases.
+  </Card>
+  <Card title="Activity console" icon="terminal">
+    Every request sent and response received is logged in a built-in activity console, making it easy to inspect raw payloads and debug server behaviour without leaving the browser.
+  </Card>
+</CardGroup>
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| UI | React 19 |
+| Bundler | Vite (ESM) |
+| Routing | react-router-dom |
+| MCP protocol | `@modelcontextprotocol/sdk` — `StreamableHTTPClientTransport` and `SSEClientTransport` |
+| Validation | zod |
+| Styles | Custom CSS + Google Fonts (Poppins · Source Serif 4) |
+| Container | Docker multi-stage build + nginx |
+
+## Project structure
+
+```text
+.
+├── index.html                    # Root HTML that mounts the React app
+├── vite.config.js                # Vite configuration
+├── eslint.config.js              # ESLint rules
+├── Dockerfile                    # Multi-stage build: Vite build → nginx
+├── nginx.conf                    # nginx config to serve the SPA (port 5173)
+├── package.json
+├── public/                       # Static assets served as-is (favicon, icons)
+└── src/
+    ├── main.jsx                  # React entry point (mounts <App/>)
+    ├── App.jsx                   # Layout, navigation, light/dark theme, routes
+    ├── index.css                 # Base styles and theme variables
+    ├── App.css                   # App and inspector styles
+    │
+    ├── pages/
+    │   ├── Home.jsx              # Landing page
+    │   ├── Inspector.jsx         # The inspector: connect, explore, and test an MCP server
+    │   ├── WhatIsMcp.jsx         # Informational page "What is MCP?"
+    │   └── Desarrollo.jsx        # "Why?" page: project motivation
+    │
+    ├── components/
+    │   ├── Dropdown.jsx          # Reusable dropdown selector
+    │   └── ConsoleLog.jsx        # Activity console (request/response log)
+    │
+    ├── lib/
+    │   └── mcpClient.js          # McpConnection: wraps the MCP SDK (HTTP/SSE transport)
+    │
+    └── assets/                   # Images (puzzle pieces, flow diagrams, profile)
+```
+
+## Requirements
+
+- **Node.js 18+** — the project uses ES modules throughout; the Dockerfile targets Node 20 Alpine for builds.
+- **An accessible MCP server** reachable via Streamable HTTP or SSE, with **CORS enabled** for the origin from which this client is served. Without CORS, the browser will block all connection attempts.
+
+<Note>
+  Ready to run the inspector locally? Head to the [Quickstart](/quickstart) to clone the repo, install dependencies, and connect to your first MCP server in under five minutes.
+</Note>

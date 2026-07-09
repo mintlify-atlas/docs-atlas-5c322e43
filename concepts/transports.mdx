@@ -1,0 +1,92 @@
+---
+title: "MCP Transport Options: HTTP and SSE"
+sidebarTitle: "Transports"
+description: "Kunna MCP Client supports Streamable HTTP and SSE transports. Understand when to use each and how authentication headers are applied."
+---
+
+MCP communication happens over a transport layer that carries the JSON-RPC messages between client and server. Kunna MCP Client supports two browser-compatible transports: Streamable HTTP (the current recommended standard) and SSE (the legacy variant maintained for backward compatibility). STDIO — where the server runs as a local subprocess communicating over stdin/stdout — is not supported because spawning local processes is not possible in a browser environment.
+
+<Tabs>
+  <Tab title="HTTP (Streamable)">
+    ## Streamable HTTP
+
+    Streamable HTTP is the modern, recommended MCP transport. It uses standard HTTP requests, allowing the server to stream responses back to the client incrementally. This makes it well-suited for tool calls that return large payloads or for servers that push progress updates mid-execution.
+
+    **Implementation** — Kunna uses `StreamableHTTPClientTransport` from `@modelcontextprotocol/sdk/client/streamableHttp.js`. Authentication headers are injected directly into the underlying `requestInit`:
+
+    ```javascript
+    const transport = new StreamableHTTPClientTransport(
+      new URL('http://localhost:3001/mcp'),
+      { requestInit: { headers: { Authorization: 'Bearer my-token' } } }
+    );
+    ```
+
+    **Best for:**
+    - Newly built MCP servers
+    - Production deployments
+    - Any server implementing the current MCP specification
+    - Scenarios requiring Bearer token authentication
+  </Tab>
+  <Tab title="SSE (Legacy)">
+    ## SSE (Server-Sent Events)
+
+    SSE is the older HTTP-based MCP transport, built on the browser's native `EventSource` API. It was the standard transport before Streamable HTTP was introduced and is now deprecated in the current MCP spec.
+
+    **Implementation** — Kunna uses `SSEClientTransport` from `@modelcontextprotocol/sdk/client/sse.js`. Like the HTTP transport, authentication headers are passed through `requestInit`:
+
+    ```javascript
+    const transport = new SSEClientTransport(
+      new URL('http://localhost:3001/mcp'),
+      { requestInit: { headers: { Authorization: 'Bearer my-token' } } }
+    );
+    ```
+
+    **Best for:**
+    - Servers built against an earlier version of the MCP SDK that have not yet been updated
+    - Maintaining backward compatibility during a migration to Streamable HTTP
+
+    <Note>
+      The SSE transport is deprecated in the current MCP specification. If you control the server, consider migrating it to Streamable HTTP transport.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Authentication headers
+
+Both transports use the same `buildHeaders()` helper to construct the HTTP headers that accompany every request. The helper accepts an `auth` config object and returns a plain headers map:
+
+```javascript
+function buildHeaders(auth = { type: 'none' }) {
+  if (auth?.type === 'bearer') return { Authorization: `Bearer ${auth.token}` };
+  if (auth?.type === 'custom') return { ...(auth.headers ?? {}) };
+  return {};
+}
+```
+
+The three supported auth modes are:
+
+| `auth.type` | Result |
+|-------------|--------|
+| `'none'` | No headers added — suitable for servers with no authentication |
+| `'bearer'` | Adds `Authorization: Bearer <token>` — the standard for token-protected servers |
+| `'custom'` | Merges `auth.headers` directly — for non-standard auth schemes |
+
+In the Kunna inspector UI, you select **None** or **Bearer** from the auth dropdown. The `buildHeaders()` function is called internally when the transport is constructed; you never need to set headers manually.
+
+## CORS requirement
+
+<Warning>
+  Because Kunna runs entirely in the browser, all transport requests are subject to the browser's CORS (Cross-Origin Resource Sharing) policy. The MCP server **must** respond with `Access-Control-Allow-Origin` headers that include the origin from which Kunna is served — for example `http://localhost:5173` in development.
+
+  If a connection attempt fails with a network error immediately after clicking **Connect**, CORS is almost always the cause. In the Kunna MCP Server this is controlled via the `CORS_ALLOWED_ORIGINS` environment variable.
+</Warning>
+
+## Transport selection guide
+
+Use the table below to pick the right transport for your situation:
+
+| Scenario | Recommended transport |
+|----------|-----------------------|
+| New MCP server, any version | HTTP (Streamable) |
+| Server built on older MCP SDK | SSE |
+| Local process (not browser) | STDIO (not supported in Kunna) |

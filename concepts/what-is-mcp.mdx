@@ -1,0 +1,53 @@
+---
+title: "What Is the Model Context Protocol (MCP)?"
+sidebarTitle: "What is MCP?"
+description: "MCP is an open standard that lets AI applications connect to tools and data sources uniformly — no custom integration per service."
+---
+
+MCP (Model Context Protocol) is an open standard created by Anthropic that defines a common language between AI clients and external servers. Any client that speaks MCP can use any conforming server, regardless of what system that server wraps. This makes it possible to build a single inspector tool — like Kunna MCP Client — that works with any MCP-compliant server, from a local filesystem server to a remote IoT data platform.
+
+## The problem MCP solves
+
+Before MCP, connecting an AI model to each external service required bespoke code for every combination. A team that wanted their AI assistant to query a database, call a REST API, and read local files had to write three completely separate integration layers — and if a new AI model came along, those layers might need to be rewritten again.
+
+MCP solves this with a single shared protocol. The scale of the problem is clearest when you think in terms of N×M integrations:
+
+- **Without MCP**: N AI clients × M services = N×M custom integrations. Every new client that wants to talk to every existing service must write its own adapter for each one.
+- **With MCP**: each AI client implements the protocol once; each service implements the protocol once. The result is N+M implementations that interoperate freely.
+
+Kunna MCP Client is a direct product of this model — it speaks MCP, so it connects to any server that does, without knowing anything about the underlying system that server wraps.
+
+## How it works
+
+MCP communication is built on JSON-RPC 2.0. The client and server exchange structured JSON messages over a transport layer (HTTP, SSE, or STDIO). The session always starts with a capability negotiation handshake:
+
+1. The client sends an `initialize` request carrying its identity and the capabilities it supports.
+2. The server responds with its own identity and the capabilities it exposes: tools, prompts, resources, or any combination.
+3. The client sends a `notifications/initialized` message to confirm the handshake is complete.
+4. From that point, the client can list and invoke any capability the server advertised.
+
+Here is what that flow looks like in practice:
+
+```text
+Client → Server: initialize({ clientInfo, capabilities: {} })
+Server → Client: { serverInfo, capabilities: { tools, prompts, resources } }
+Client → Server: notifications/initialized
+Client → Server: tools/list
+Server → Client: { tools: [...] }
+```
+
+Every subsequent call — `tools/call`, `prompts/get`, `resources/read` — follows the same JSON-RPC pattern: a named method with parameters, and a structured response.
+
+## MCP in Kunna
+
+Kunna MCP Client uses the official `@modelcontextprotocol/sdk` npm package as its protocol implementation. The app does not implement JSON-RPC from scratch; instead, the `McpConnection` class in `src/lib/mcpClient.js` wraps the SDK's `Client` class and provides a clean interface for the rest of the React application.
+
+`McpConnection` is responsible for three things:
+
+- **Transport setup** — constructing the correct transport object (`StreamableHTTPClientTransport` or `SSEClientTransport`) based on the connection config.
+- **Capability negotiation** — calling `connect()` on the SDK client, then reading `getServerCapabilities()` to discover what the server offers.
+- **Method dispatch** — exposing `callTool()`, `getPrompt()`, and `disconnect()` so the UI never needs to touch the SDK directly.
+
+<Note>
+  For the full protocol specification, including message schemas, versioning, and the complete list of methods, see the official MCP documentation at [https://modelcontextprotocol.io](https://modelcontextprotocol.io).
+</Note>

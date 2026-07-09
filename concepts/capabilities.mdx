@@ -1,0 +1,99 @@
+---
+title: "MCP Server Capabilities: Tools, Prompts, and Resources"
+sidebarTitle: "Capabilities"
+description: "A deep dive into the three capability types an MCP server can expose — tools, prompts, and resources — and how Kunna surfaces each one."
+---
+
+An MCP server declares up to three capability types during the initialize handshake. Kunna MCP Client queries each capability the server advertises and presents it in the inspector sidebar. Servers are free to expose any combination — tools only, prompts and resources but no tools, all three, or just one — and Kunna adapts its UI accordingly.
+
+<Tabs>
+  <Tab title="Tools">
+    ## Tools
+
+    Tools are executable actions the AI model can invoke. They receive typed input arguments and return a structured result. This is how a model moves from passively generating text to actively interacting with external systems — querying a database, running a calculation, creating a record, or calling an API.
+
+    **Schema** — each tool descriptor carries three fields:
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `name` | string | Unique identifier used when calling the tool |
+    | `description` | string | Human-readable explanation of what the tool does |
+    | `inputSchema` | JSON Schema object | Describes the arguments the tool accepts, including types, required fields, enums, and defaults |
+
+    **How Kunna uses it** — when a tool is selected in the inspector, the `schemaToFields()` helper parses `inputSchema.properties` into typed form fields. Required fields are marked, enum values become dropdowns, booleans become toggles, and defaults are pre-filled. A raw JSON mode is also available for advanced use cases.
+
+    **Example tool descriptor:**
+
+    ```json
+    {
+      "name": "search-campus-buildings",
+      "description": "Search for buildings on the campus by keyword",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search keyword" }
+        },
+        "required": ["query"]
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Prompts">
+    ## Prompts
+
+    Prompts are reusable, parameterized instruction templates that the server offers for specific tasks. Instead of each user writing a prompt from scratch — and potentially getting it wrong — the server exposes a tested, consistent template to which you only need to supply arguments. This is especially useful for complex tasks that benefit from carefully crafted phrasing.
+
+    **Schema** — each prompt descriptor carries:
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `name` | string | Unique identifier used when fetching the prompt |
+    | `description` | string | Human-readable explanation of what the prompt produces |
+    | `arguments` | array | List of `{ name, description, required }` objects describing the parameters |
+
+    **How Kunna uses it** — when a prompt is selected, the `promptArgsToFields()` helper converts the `arguments` array into string-typed form fields, marking required ones. Submitting the form calls `getPrompt()` and displays the rendered prompt messages returned by the server.
+
+    **Example prompt descriptor:**
+
+    ```json
+    {
+      "name": "campus-report",
+      "description": "Generate an IoT data report for a specific building",
+      "arguments": [
+        { "name": "building", "description": "Building name or ID", "required": true }
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Resources">
+    ## Resources
+
+    Resources are read-only data items the server makes available as context for the model. They can be files, database records, sensor snapshots, or any other document that helps ground the model's responses in up-to-date information. Each resource is identified by a URI; the client decides when to fetch it and inject it into the model's context window.
+
+    **Schema** — each resource descriptor carries at minimum:
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `uri` | string | Unique identifier and address of the resource |
+    | `name` | string *(optional)* | Human-readable label |
+    | `description` | string *(optional)* | What the resource contains |
+    | `mimeType` | string *(optional)* | Content type, e.g. `application/json` or `text/plain` |
+
+    **How Kunna uses it** — `listResources()` is called during the `connect()` flow if `capabilities.resources` is truthy. The resulting list is stored in application state and displayed in the inspector sidebar. Individual resource reading (fetching the content of a specific URI) is not yet surfaced in the Kunna UI but is supported at the SDK level.
+  </Tab>
+</Tabs>
+
+## Capability detection
+
+After the `initialize` handshake completes, Kunna reads the server's advertised capabilities and fires exactly the list requests the server supports — nothing more. The three calls are issued in parallel using `Promise.all` to keep connection time minimal:
+
+```javascript
+const capabilities = this.client.getServerCapabilities() ?? {};
+const [tools, prompts, resources] = await Promise.all([
+  capabilities.tools     ? this.client.listTools()     : { tools: [] },
+  capabilities.prompts   ? this.client.listPrompts()   : { prompts: [] },
+  capabilities.resources ? this.client.listResources() : { resources: [] },
+]);
+```
+
+If a capability key is absent or falsy in the server's response, the corresponding array is left empty and the relevant section is hidden in the Kunna sidebar. This means Kunna is safe to connect to minimal servers that only implement one capability type.

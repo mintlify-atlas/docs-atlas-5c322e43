@@ -1,0 +1,248 @@
+---
+title: "McpConnection API Reference"
+sidebarTitle: "McpConnection"
+description: "Full API reference for the McpConnection class in src/lib/mcpClient.js — the core module that manages MCP transport, handshake, and method dispatch."
+---
+
+`McpConnection` (exported from `src/lib/mcpClient.js`) is the single class responsible for all MCP communication in Kunna. It wraps the `@modelcontextprotocol/sdk` `Client` class, handles transport creation, and exposes a clean async interface for connecting, calling tools, fetching prompts, and disconnecting. Each `Inspector` page instance holds exactly one `McpConnection` in a React ref, ensuring a single active connection throughout the session.
+
+## Constructor
+
+### `new McpConnection()`
+
+Creates a new `McpConnection` instance. Takes no arguments. Both internal slots start as `null` — no network activity occurs until `connect()` is called.
+
+```javascript
+import { McpConnection } from './src/lib/mcpClient.js';
+
+const connection = new McpConnection();
+// connection.client    → null
+// connection.transport → null
+```
+
+## Properties
+
+<ResponseField name="connected" type="boolean">
+  Getter. Returns `true` when an active `Client` instance exists (i.e., after a successful `connect()` call and before `disconnect()` is called). Returns `false` otherwise. Does not perform any network check — it reflects the presence of the internal `client` reference only.
+</ResponseField>
+
+## Methods
+
+### `connect(config)`
+
+Establishes a full MCP connection to a remote server. If a connection is already active, it is cleanly disconnected first. The method builds the appropriate transport, performs the MCP initialize handshake, reads server capabilities, and fetches all available tools, prompts, and resources in parallel.
+
+<ParamField path="config" type="object" required>
+  Connection configuration object.
+
+  <Expandable title="config properties">
+    <ParamField path="config.transport" type="string" required>
+      Transport mechanism to use. Accepted values: `"http"` (Streamable HTTP, the current MCP standard) or `"sse"` (Server-Sent Events, legacy transport for older servers). Any other value throws `Error: Transporte no soportado en navegador: <value>`.
+    </ParamField>
+
+    <ParamField path="config.url" type="string" required>
+      Full URL to the MCP endpoint, e.g. `"http://localhost:3001/mcp"`. Passed directly to `new URL()` — must be a valid absolute URL.
+    </ParamField>
+
+    <ParamField path="config.auth" type="object">
+      Authentication configuration. Defaults to `{ type: 'none' }` when omitted. Accepted shapes:
+
+      - `{ type: 'none' }` — no `Authorization` header is sent.
+      - `{ type: 'bearer', token: string }` — sends `Authorization: Bearer <token>`.
+      - `{ type: 'custom', headers: Record<string, string> }` — merges the provided headers object directly into each request.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+Returns `Promise<ConnectionResult>`:
+
+<ResponseField name="serverInfo" type="object">
+  Server name and version as returned by `client.getServerVersion()` after the initialize handshake. Shape depends on the server implementation — typically `{ name: string, version: string }`.
+</ResponseField>
+
+<ResponseField name="capabilities" type="object">
+  Raw capabilities object from `client.getServerCapabilities()`. Presence of `capabilities.tools`, `capabilities.prompts`, and `capabilities.resources` keys determines which list methods are called. Falls back to `{}` if the server returns nothing.
+</ResponseField>
+
+<ResponseField name="tools" type="array">
+  Array of tool descriptor objects from `client.listTools()`. Each element typically has `{ name, description, inputSchema }`. Returns an empty array `[]` if the server did not advertise the `tools` capability.
+</ResponseField>
+
+<ResponseField name="prompts" type="array">
+  Array of prompt descriptor objects from `client.listPrompts()`. Returns an empty array `[]` if the server did not advertise the `prompts` capability.
+</ResponseField>
+
+<ResponseField name="resources" type="array">
+  Array of resource descriptor objects from `client.listResources()`. Returns an empty array `[]` if the server did not advertise the `resources` capability.
+</ResponseField>
+
+```javascript
+const connection = new McpConnection();
+
+const result = await connection.connect({
+  transport: 'http',
+  url: 'http://localhost:3001/mcp',
+  auth: { type: 'bearer', token: 'my-secret-token' }
+});
+
+console.log(result.serverInfo);   // { name: 'my-mcp-server', version: '1.0.0' }
+console.log(result.capabilities); // { tools: {}, prompts: {} }
+console.log(result.tools);        // [{ name, description, inputSchema }, ...]
+console.log(result.prompts);      // [{ name, description, arguments }, ...]
+console.log(result.resources);    // []
+```
+
+<Note>
+  `connect()` calls and awaits `listTools()`, `listPrompts()`, and `listResources()` in parallel via `Promise.all`. Only the lists whose corresponding capability key is present are actually fetched — the rest resolve immediately to empty arrays.
+</Note>
+
+---
+
+### `callTool(name, args)`
+
+Calls a named tool on the connected MCP server and returns the server's response.
+
+<ParamField path="name" type="string" required>
+  The exact name of the tool to invoke, as it appeared in the `tools` array returned by `connect()`.
+</ParamField>
+
+<ParamField path="args" type="object">
+  Arguments to pass to the tool. Must conform to the tool's `inputSchema`. Defaults to `{}` when omitted.
+</ParamField>
+
+Returns `Promise<ToolResult>`. The shape of the result is defined by the tool's implementation on the server — the SDK typically wraps it as `{ content: [{ type: 'text', text: string }, ...] }`.
+
+<Warning>
+  Throws `Error("No hay conexión activa")` if called before `connect()` or after `disconnect()`. Always check `connection.connected` first, or call `connect()` before invoking tools.
+</Warning>
+
+```javascript
+const result = await connection.callTool('search-campus-buildings', { query: 'library' });
+console.log(result.content); // [{ type: 'text', text: 'Building A ...' }]
+```
+
+---
+
+### `getPrompt(name, args)`
+
+Retrieves a rendered prompt from the connected MCP server.
+
+<ParamField path="name" type="string" required>
+  The exact name of the prompt to retrieve, as it appeared in the `prompts` array returned by `connect()`.
+</ParamField>
+
+<ParamField path="args" type="object">
+  Arguments to pass to the prompt template. Defaults to `{}` when omitted.
+</ParamField>
+
+Returns `Promise<PromptResult>`. The result shape is defined by the MCP SDK — typically `{ messages: [{ role: string, content: { type: string, text: string } }, ...] }`.
+
+<Warning>
+  Throws `Error("No hay conexión activa")` if called before `connect()` or after `disconnect()`.
+</Warning>
+
+```javascript
+const result = await connection.getPrompt('campus-report', { building: 'Library A' });
+console.log(result.messages); // [{ role: 'user', content: { type: 'text', text: '...' } }]
+```
+
+---
+
+### `disconnect()`
+
+Closes the active transport and resets the internal `client` and `transport` slots to `null`. After this call, `connection.connected` returns `false`.
+
+This method is safe to call when no connection is active — it exits silently. If `client.close()` throws, the error is caught and logged as a warning via `console.warn` so the reset always completes.
+
+Returns `Promise<void>`.
+
+```javascript
+await connection.disconnect();
+console.log(connection.connected); // false
+```
+
+<Tip>
+  The `Inspector` page calls `disconnect()` automatically in a React `useEffect` cleanup function, so connections are torn down when the component unmounts. You do not need to call it manually in normal inspector usage.
+</Tip>
+
+---
+
+## UI Components
+
+The `src/components/` directory provides two reusable React components used throughout the Inspector page.
+
+### `Dropdown`
+
+An accessible custom dropdown that replaces native `<select>` elements with full keyboard navigation support (Arrow keys, Enter / Space, Escape). Used in the Inspector connection bar for transport and auth type selection, and in tool parameter forms for `enum` and `boolean` fields.
+
+<ParamField path="value" type="string | number">
+  The currently selected value. Should match the `value` field of one of the `options` objects. If no match is found, the `placeholder` is displayed instead.
+</ParamField>
+
+<ParamField path="options" type="array" required>
+  Array of option objects. Each element must have the shape `{ value: string | number, label: string }`. `value` is used for matching and callbacks; `label` is displayed in the UI.
+</ParamField>
+
+<ParamField path="onChange" type="function" required>
+  Callback invoked when the user selects an option. Signature: `(value: string | number) => void`. Receives the `value` field of the selected option, not the full option object.
+</ParamField>
+
+<ParamField path="disabled" type="boolean">
+  When `true`, the trigger button is disabled and keyboard/mouse interaction is suppressed. Defaults to `false`. The Inspector sets this to `true` on all connection-bar dropdowns while a connection is active.
+</ParamField>
+
+<ParamField path="placeholder" type="string">
+  Text displayed in the trigger when no option matches `value`. Defaults to `"— elige —"`.
+</ParamField>
+
+<ParamField path="className" type="string">
+  Additional CSS class names applied to the outermost container `div`. Useful for layout adjustments without modifying component internals.
+</ParamField>
+
+```jsx
+import Dropdown from './src/components/Dropdown';
+
+<Dropdown
+  value={transport}
+  options={[
+    { value: 'http', label: 'HTTP' },
+    { value: 'sse',  label: 'SSE' },
+  ]}
+  onChange={(v) => setTransport(v)}
+  placeholder="— choose transport —"
+/>
+```
+
+---
+
+### `ConsoleLog`
+
+Renders the activity log panel that appears at the bottom of the Inspector page. Displays a chronological list of MCP request and response events, each tagged with a direction/status indicator and timestamp. When the entries list is empty it shows `"Esperando actividad…"`.
+
+<ParamField path="entries" type="array" required>
+  Array of log entry objects. Each entry must have the following shape:
+
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `kind` | `'req' \| 'ok' \| 'err'` | Visual tag style — outgoing request, successful response, or error |
+  | `label` | `string` | Short directional label shown as a pill, e.g. `"→ MCP"`, `"← 200"`, `"← error"` |
+  | `msg` | `string` | Full message text displayed after the label |
+  | `time` | `string` | Formatted timestamp string, e.g. `"14:32:01"` |
+</ParamField>
+
+<ParamField path="onClear" type="function" required>
+  Callback invoked when the user clicks the "limpiar" (clear) button. The button is only rendered when `entries.length > 0`. Signature: `() => void`. Typically resets the entries state to `[]`.
+</ParamField>
+
+```jsx
+import ConsoleLog from './src/components/ConsoleLog';
+
+const [log, setLog] = useState([]);
+
+function pushLog(kind, label, msg) {
+  const time = new Date().toLocaleTimeString('es-ES');
+  setLog((l) => [...l, { kind, label, msg, time }]);
+}
+
+<ConsoleLog entries={log} onClear={() => setLog([])} />
+```

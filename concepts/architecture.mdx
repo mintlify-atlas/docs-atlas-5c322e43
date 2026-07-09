@@ -1,0 +1,76 @@
+---
+title: "MCP Architecture: Host, Client, and Server"
+sidebarTitle: "Architecture"
+description: "Learn about the three roles in an MCP deployment — host, client, and server — and how Kunna MCP Client maps to each."
+---
+
+Every MCP deployment consists of three roles: the host application, the protocol client inside it, and one or more servers that expose capabilities. Understanding these roles clarifies what Kunna MCP Client does and how it relates to the servers you connect to. The distinction between "host" and "client" is subtle but important — they refer to different layers of the same application, not to different programs.
+
+<CardGroup cols={3}>
+  <Card title="Host" icon="house">
+    The AI application the user interacts with — an IDE, a desktop assistant, or an inspection client like Kunna. The host orchestrates everything: it manages the AI model, decides when to use server capabilities, and coordinates one or more simultaneous MCP connections.
+  </Card>
+  <Card title="Client" icon="plug">
+    The protocol component that lives inside the host and maintains a one-to-one connection with a single MCP server. The client speaks JSON-RPC, negotiates capabilities during the `initialize` handshake, and translates host requests into server-understood method calls.
+  </Card>
+  <Card title="Server" icon="server">
+    The program that exposes capabilities — tools, prompts, and resources — over a specific data source or system. Each server is independent and focused on a domain: database access, a filesystem, or IoT campus sensors as in the Kunna project.
+  </Card>
+</CardGroup>
+
+## How roles map to Kunna
+
+Kunna MCP Client acts as **both host and client** in the protocol sense, which is the standard shape for an inspection or agent tool:
+
+- The **React application** is the host. It renders the UI, manages application state, and decides when to connect to a server, which tool to call, or which prompt to fetch.
+- **`McpConnection`** (in `src/lib/mcpClient.js`) is the protocol client. It wraps the `@modelcontextprotocol/sdk` `Client` class and handles all JSON-RPC communication on behalf of the React app.
+- The **server** is any external, MCP-compliant process you point Kunna at. In the Kunna project ecosystem, that is the Kunna MCP Server, which exposes IoT campus sensor data as tools, prompts, and resources. Because Kunna speaks standard MCP, it connects equally well to any other conforming server.
+
+## One client, one server
+
+`McpConnection` maintains exactly one active connection at a time. The design is intentional: the inspector is focused on deeply inspecting one server rather than aggregating many.
+
+The `connected` getter returns `true` only when both a transport instance and a `Client` instance exist:
+
+```javascript
+get connected() {
+  return this.client !== null;
+}
+```
+
+If you call `connect()` while a connection is already open, `McpConnection` automatically tears down the existing session first:
+
+```javascript
+async connect(config) {
+  if (this.client) await this.disconnect();
+  // ... set up new transport and client
+}
+```
+
+This ensures there is never a leaked connection in the background.
+
+## Capability negotiation
+
+During the `initialize` handshake, Kunna's client sends `{ capabilities: {} }` — declaring no special client-side capabilities — and reads back whatever the server advertises. The `connect()` method then conditionally fetches each capability list based solely on what the server reported:
+
+```javascript
+const capabilities = this.client.getServerCapabilities() ?? {};
+const [tools, prompts, resources] = await Promise.all([
+  capabilities.tools     ? this.client.listTools()     : { tools: [] },
+  capabilities.prompts   ? this.client.listPrompts()   : { prompts: [] },
+  capabilities.resources ? this.client.listResources() : { resources: [] },
+]);
+```
+
+A server that only exposes tools will never receive a `prompts/list` or `resources/list` request. This keeps communication minimal and makes Kunna safe to use against servers that implement only a subset of the spec.
+
+The full return value of `connect()` bundles everything the UI needs in one shot:
+
+```javascript
+await connection.connect({
+  transport: 'http', // 'http' | 'sse'
+  url: 'http://localhost:3001/mcp',
+  auth: { type: 'bearer', token: 'my-token' } // or { type: 'none' }
+});
+// Returns: { serverInfo, capabilities, tools, prompts, resources }
+```

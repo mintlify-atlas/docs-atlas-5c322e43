@@ -1,0 +1,90 @@
+---
+title: "Connecting to an MCP Server with Kunna Inspector"
+sidebarTitle: "Connecting"
+description: "Configure transport, URL, and authentication to connect the Kunna inspector to any MCP server over Streamable HTTP or SSE."
+---
+
+The Inspector page is the core of Kunna MCP Client. Before you can explore tools, prompts, or resources, you must first establish a connection by configuring the transport protocol, the server URL, and any optional authentication credentials. Once connected, the inspector performs the full MCP initialize handshake and immediately populates the sidebar with everything the server exposes.
+
+## Connection form
+
+Each field in the connection bar maps directly to a property passed to `McpConnection.connect()`.
+
+<ParamField path="transport" type="string" required>
+  The transport protocol to use. Accepted values are `"http"` (Streamable HTTP) and `"sse"` (Server-Sent Events). Streamable HTTP is the recommended modern transport; SSE is provided for compatibility with legacy MCP servers that do not support the newer protocol.
+</ParamField>
+
+<ParamField path="url" type="string" required>
+  The full URL of the MCP server endpoint, for example `http://localhost:3001/mcp`. The value is passed directly to the transport constructor as a `URL` object, so it must be a valid absolute URL including the scheme.
+</ParamField>
+
+<ParamField path="authType" type="string">
+  The authentication strategy. Defaults to `"none"`. Set to `"bearer"` to enable token-based authentication. When `"none"` is selected, no `Authorization` header is added to outgoing requests.
+</ParamField>
+
+<ParamField path="token" type="string">
+  Only visible when `authType` is `"bearer"`. The token value to send on every request as `Authorization: Bearer <token>`. The field is rendered as a password input so the token is not displayed in plain text.
+</ParamField>
+
+## Connecting step by step
+
+<Steps>
+  <Step title="Open the Inspector tab">
+    Click **Inspector** in the application navigation bar. The connection bar appears at the top of the page, pre-filled with the default URL `http://localhost:3001/mcp` and the HTTP transport.
+  </Step>
+  <Step title="Choose a transport">
+    Select **HTTP** or **SSE** from the transport dropdown. Choose **HTTP** unless you are connecting to an older server that only speaks SSE.
+  </Step>
+  <Step title="Enter the server URL">
+    Type the full URL of your MCP server endpoint into the URL field. Include the scheme (`http://` or `https://`) and the exact path, for example `http://localhost:3001/mcp`.
+  </Step>
+  <Step title="Configure authentication (optional)">
+    If the server requires authentication, change the auth dropdown from **Sin auth** to **Bearer** and paste your token into the password field that appears. If no auth is required, leave the dropdown set to **Sin auth**.
+  </Step>
+  <Step title="Click Conectar">
+    Press the **Conectar** button. The button label changes to **Conectando…** while the handshake is in progress. The activity console at the bottom of the page logs the outgoing connection request immediately.
+  </Step>
+  <Step title="Verify the connection">
+    On a successful connection a green server badge showing the server name and version appears next to the page heading — for example, `kunna-mcp-server v1.0.0`. The sidebar populates with the server's tools and prompts, ready to be selected and called.
+  </Step>
+</Steps>
+
+## What happens during connection
+
+When you click **Conectar**, the inspector executes the following sequence inside `McpConnection.connect()`:
+
+1. **Transport creation.** Depending on the selected transport, either a `StreamableHTTPClientTransport` or an `SSEClientTransport` from the `@modelcontextprotocol/sdk` package is instantiated with the target URL. If a Bearer token was provided, it is included in every request via the `Authorization` header through the `requestInit.headers` option.
+
+2. **Client creation.** A new `Client` instance is created, identifying itself to the server as `"mi-inspector-tfg-web"` version `"0.1.0"` with an empty initial capabilities object.
+
+3. **Handshake.** `client.connect(transport)` is called, which performs the MCP `initialize` / `initialized` exchange. After this point `client.getServerCapabilities()` and `client.getServerVersion()` are available.
+
+4. **Capability discovery.** The client reads the server's declared capabilities. It then calls `listTools()`, `listPrompts()`, and `listResources()` in parallel using `Promise.all`. Any capability the server does not advertise results in an empty array rather than an error.
+
+5. **State update.** The returned object — containing `serverInfo`, `capabilities`, `tools`, `prompts`, and `resources` — is stored in the inspector's React state. The UI re-renders to show the sidebar and the green server badge.
+
+## Disconnecting
+
+While the inspector is connected, the **Conectar** button is replaced by a red **Desconectar** button. Clicking it:
+
+1. Logs a `→ MCP desconectando` entry to the activity console.
+2. Calls `McpConnection.disconnect()`, which invokes `client.close()` on the underlying SDK client and nulls out both the `client` and `transport` references.
+3. Resets the inspector state: the server info, selected item, and any displayed result are all cleared.
+4. Returns the status to `"idle"` and logs `← ok desconectado`.
+
+The inspector also calls `disconnect()` automatically when the component unmounts (for example, when you navigate away from the page), so connections are never left dangling.
+
+## Connection states
+
+The inspector tracks the current connection lifecycle in a `status` variable that drives the UI.
+
+| State | Meaning |
+|---|---|
+| `idle` | Initial state — no connection has been attempted. The connection form is fully editable. |
+| `connecting` | The `initialize` handshake is in progress. The **Conectar** button shows **Conectando…** and is disabled. |
+| `connected` | The handshake succeeded and the server is ready. The sidebar is populated and tools / prompts can be called. |
+| `error` | The connection attempt failed. A red error banner appears below the connection bar with the full error message. |
+
+<Note>
+  **CORS is the most common connection failure.** Because the inspector runs entirely in the browser, the MCP server must include the correct `Access-Control-Allow-Origin` header for the origin from which Kunna is served. A **"Failed to fetch"** error in the activity console almost always indicates a CORS misconfiguration on the server rather than a problem with the inspector itself. If you control the server, ensure its CORS policy permits the origin (e.g. `http://localhost:5173` during local development).
+</Note>

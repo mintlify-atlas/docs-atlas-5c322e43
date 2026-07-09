@@ -1,0 +1,73 @@
+{
+  "projectType": "frontend",
+  "projectName": "Kunna MCP Client",
+  "projectDescription": "A generic web-based inspector and client for Model Context Protocol (MCP) servers, built with React + Vite, that lets you connect to any MCP server, explore its tools, prompts, and resources, and execute them interactively from the browser.",
+  "theme": "luma",
+  "primaryColor": "#7C3AED",
+  "lightColor": "#EDE9FE",
+  "darkColor": "#4C1D95",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment"
+            ]
+          },
+          {
+            "group": "Using the Inspector",
+            "pages": [
+              "inspector/connecting",
+              "inspector/tools-and-prompts",
+              "inspector/resources",
+              "inspector/activity-console"
+            ]
+          },
+          {
+            "group": "MCP Concepts",
+            "pages": [
+              "concepts/what-is-mcp",
+              "concepts/architecture",
+              "concepts/capabilities",
+              "concepts/transports"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/mcp-connection-api",
+              "reference/configuration",
+              "reference/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Connect to any MCP server via Streamable HTTP or SSE transport",
+    "Auto-discover tools, prompts, and resources after MCP handshake",
+    "Dynamic form generation from JSON Schema (inputSchema) for tools and prompts",
+    "Bearer token authentication support",
+    "Raw JSON argument mode for advanced usage",
+    "Real-time activity console logging all requests and responses",
+    "Light/dark theme with localStorage persistence",
+    "Docker multi-stage build for containerized deployment via nginx"
+  ],
+  "publicApiSurface": [
+    "McpConnection.connect(config) — establishes MCP connection, returns serverInfo, capabilities, tools, prompts, resources",
+    "McpConnection.callTool(name, args) — invokes a tool on the connected server",
+    "McpConnection.getPrompt(name, args) — retrieves a prompt from the connected server",
+    "McpConnection.disconnect() — closes the active MCP connection",
+    "McpConnection.connected — boolean getter indicating connection state",
+    "Dropdown component — reusable accessible dropdown (value, options, onChange, disabled, placeholder)",
+    "ConsoleLog component — activity log display (entries, onClear)",
+    "Transport options: http (Streamable HTTP), sse (Server-Sent Events)",
+    "Auth options: none, bearer token"
+  ]
+}

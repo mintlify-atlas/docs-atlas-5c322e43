@@ -1,0 +1,63 @@
+---
+title: "Using the Activity Console in the Inspector"
+sidebarTitle: "Activity Console"
+description: "The activity console logs every MCP request and response in real time, giving you a timestamped audit trail of all inspector activity."
+---
+
+The activity console sits at the bottom of the Inspector page and records every MCP event — connections, tool calls, prompt requests, errors, and disconnections — as they happen, with precise timestamps and color-coded status tags. It gives you a running audit trail of the full JSON-RPC flow without needing to open the browser's network panel.
+
+## Console anatomy
+
+The `ConsoleLog` component is styled to resemble a macOS terminal window:
+
+- **Traffic light dots** — three colored circles (red, yellow, green) appear in the title bar purely as a visual affordance, consistent with the terminal aesthetic.
+- **Title** — the word **actividad** identifies the panel.
+- **limpiar button** — a clear button appears in the title bar whenever at least one log entry exists. It is hidden when the console is empty so it never takes up space unnecessarily.
+- **Log lines** — each event occupies one line composed of three parts: a `timestamp` on the left, a color-coded `tag` in the middle, and the `message text` on the right.
+- **Idle state** — when no entries have been logged yet, the console body shows the placeholder text **Esperando actividad…** in a muted color.
+- **Cursor line** — a blinking cursor line (`$ _`) is permanently rendered at the bottom of the log body to reinforce the terminal metaphor.
+
+## Log entry types
+
+Every call to the internal `pushLog(kind, label, msg)` function in the inspector creates one entry. The `kind` field controls the tag color; `label` is the short tag text; `msg` is the human-readable description.
+
+| Kind | Tag | Color | When emitted |
+|---|---|---|---|
+| `req` | `→ MCP` / `→ CALL` / `→ PROMPT` | neutral | Immediately before sending a connection request, tool call, or prompt request |
+| `ok` | `← 200` / `← ok` | green | After a successful server response or clean disconnection |
+| `err` | `← error` | red | When a connection attempt, tool call, or prompt request throws an exception |
+
+## Typical session log
+
+The following example shows the console output for a complete inspector session: connecting to a server, calling a tool, fetching a prompt, and disconnecting.
+
+```text
+10:32:01  → MCP      conectando a http://localhost:3001/mcp (http)
+10:32:01  ← 200      conectado · kunna-mcp-server v1.0.0 · 5 tools, 2 prompts
+10:32:15  → CALL     search-campus-buildings {"query":"library"}
+10:32:15  ← ok       respuesta recibida
+10:33:02  → PROMPT   campus-summary {"building":"Politécnica IV"}
+10:33:03  ← ok       respuesta recibida
+10:33:10  → MCP      desconectando
+10:33:10  ← ok       desconectado
+```
+
+The `← 200` tag on the connection success line comes from the label passed to `pushLog` — it mirrors the HTTP 200 status code as a familiar signal that the handshake was accepted. All other successful responses use `← ok`.
+
+## Clearing the log
+
+Clicking the **limpiar** button in the console title bar calls the `onClear` callback, which executes `setLog([])` in the inspector's state. The entries array is reset to empty, the console body reverts to the **Esperando actividad…** placeholder, and the **limpiar** button itself disappears until new entries are pushed.
+
+Clearing the log is purely cosmetic — it does not affect the active connection or any in-flight requests.
+
+## Error messages
+
+When a connection attempt or call throws an exception, the inspector checks the error message before logging it. If the message contains `"Failed to fetch"` or `"fetch failed"`, or if the error's `name` is `"TypeError"`, the inspector appends a plain-language explanation:
+
+> *Esto suele deberse a un error de red o a que el servidor remoto no tiene configurado CORS para permitir peticiones desde este origen web.*
+
+This expanded message is logged to the console **and** displayed in the red error banner below the connection bar (for connection failures) or below the run button (for call failures), so the cause is visible in both places at once.
+
+<Tip>
+  Keep the activity console open while developing a new MCP server. Seeing the exact sequence of `→` request and `← response` entries — including the precise tool name, serialized arguments, and any error text — makes it far easier to diagnose handshake failures, missing capabilities, schema mismatches, and CORS issues without having to instrument the server with additional logging.
+</Tip>

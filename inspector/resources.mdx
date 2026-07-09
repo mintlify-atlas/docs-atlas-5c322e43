@@ -1,0 +1,56 @@
+---
+title: "Browsing MCP Server Resources"
+sidebarTitle: "Resources"
+description: "Understand how Kunna MCP Client discovers and displays the resources exposed by an MCP server after the initialize handshake."
+---
+
+MCP servers can expose resources — contextual data objects identified by URI that clients can load to supply background information to a language model. Resources are distinct from tools and prompts: rather than being actions to invoke or templates to render, they are passive data items that a client reads. After a successful connection, Kunna automatically calls `listResources()` and records whatever the server returns so the data is available for inspection.
+
+## What resources are
+
+Resources are read-only data items — files, database records, sensor readings, configuration blobs, or any other piece of context that a server wants to make available. Each resource is identified by a URI that uniquely locates it within the server's namespace. Because resources are passive, the client does not execute them; it simply reads their content and, typically, forwards it to a language model as additional context.
+
+Unlike tools, resources do not transform data or produce side effects. Unlike prompts, they are not instruction templates. They are the raw material that gives a language model situational awareness about the environment the server represents.
+
+## How Kunna discovers resources
+
+Resource discovery happens automatically inside `McpConnection.connect()` immediately after the MCP initialize handshake completes:
+
+1. The client calls `client.getServerCapabilities()` to read the server's declared capability set.
+2. If `capabilities.resources` is truthy, `client.listResources()` is called as part of a `Promise.all` that also fetches tools and prompts in parallel.
+3. If `capabilities.resources` is falsy or absent, the resources slot defaults to `{ resources: [] }` — no request is made and no error is thrown.
+4. The resolved resource descriptors are stored in `result.resources` and placed into the inspector's `server.resources` array in component state.
+
+This means resource discovery is fully automatic and zero-configuration: as long as the server declares the capability, Kunna will list its resources on every connection.
+
+## Current resource display
+
+The current version of the inspector surfaces the resource list as part of the connection result and stores it in component state alongside tools and prompts. However, the inspector does not yet provide a dedicated interaction panel for reading individual resource content — there is no equivalent of the tool detail panel for resources. The data is available in the connection result object for programmatic use via the `McpConnection` API described below.
+
+## Accessing resources programmatically
+
+If you need to work with the resource list outside the inspector UI, you can use the `McpConnection` class directly from your own JavaScript:
+
+```javascript
+import { McpConnection } from './src/lib/mcpClient.js';
+
+const connection = new McpConnection();
+
+const result = await connection.connect({
+  transport: 'http',
+  url: 'http://localhost:3001/mcp',
+  auth: { type: 'none' }
+});
+
+// Array of resource descriptor objects returned by the server
+console.log(result.resources);
+
+// Remember to close the connection when done
+await connection.disconnect();
+```
+
+The `result.resources` value is the raw array returned by `client.listResources()`. Each element is a resource descriptor object whose exact shape depends on the server implementation, but it will always contain at minimum the URI that identifies the resource.
+
+<Info>
+  Not all MCP servers implement the resources capability. If `result.resources` is an empty array, the server either has no resources to expose or does not include `resources` in its server capabilities object. This is not an error condition — tools and prompts are unaffected by whether the resources capability is present.
+</Info>

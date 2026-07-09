@@ -1,0 +1,194 @@
+---
+title: "Troubleshooting Kunna MCP Client Connection Issues"
+sidebarTitle: "Troubleshooting"
+description: "Diagnose and fix the most common issues when connecting Kunna MCP Client to an MCP server — CORS errors, auth failures, and transport mismatches."
+---
+
+Most issues with Kunna MCP Client come down to three categories: CORS policy blocking browser requests, authentication mismatches, and transport version incompatibilities. Because the MCP client runs entirely in the browser, it cannot bypass network-level restrictions the way a server-side client could — every request is subject to the browser's security model. This page covers each failure mode with specific diagnostics and fixes.
+
+## Common Connection Issues
+
+<AccordionGroup>
+  <Accordion title='"Failed to fetch" or network error on connect'>
+    **Symptom:** Clicking Connect produces an `← error` line in the activity console that includes `"Failed to fetch"` or `"fetch failed"`. The error banner on the page reads something like:
+
+    > *"Failed to fetch. Esto suele deberse a un error de red o a que el servidor remoto no tiene configurado CORS para permitir peticiones desde este origen web."*
+
+    **Cause:** The browser is blocking the outgoing MCP request because the target server's HTTP response does not include an `Access-Control-Allow-Origin` header that permits the origin from which Kunna is served. This is enforced by the browser's Cross-Origin Resource Sharing (CORS) policy and cannot be overridden from the client side.
+
+    **Fix:**
+
+    <Steps>
+      <Step title="Identify your Kunna origin">
+        Note the origin from which you are running Kunna — typically `http://localhost:5173` in development or your production domain.
+      </Step>
+      <Step title="Configure the MCP server to allow that origin">
+        On the Kunna MCP Server, set the `CORS_ALLOWED_ORIGINS` environment variable to include your Kunna origin:
+
+        ```bash
+        CORS_ALLOWED_ORIGINS=http://localhost:5173
+        ```
+
+        For multiple origins, separate them with commas. Restart the server after changing the variable.
+      </Step>
+      <Step title="Restart and retry">
+        Restart the MCP server, then click Connect in the Kunna inspector again.
+      </Step>
+    </Steps>
+
+    **Verify:** Open browser DevTools → **Network** tab → find the failed request → click it → check the **Response Headers** panel. A correctly configured server will include:
+
+    ```
+    Access-Control-Allow-Origin: http://localhost:5173
+    ```
+
+    If that header is absent or shows a different origin, the server's CORS configuration needs updating.
+
+    <Warning>
+      Setting `Access-Control-Allow-Origin: *` works for unauthenticated servers but will not allow requests with an `Authorization` header. If you use Bearer auth, the server must echo back the exact requesting origin rather than the wildcard.
+    </Warning>
+  </Accordion>
+
+  <Accordion title='"Has elegido auth Bearer pero no has introducido ningún token"'>
+    **Symptom:** Clicking Connect immediately shows the error:
+
+    > *"Has elegido auth Bearer pero no has introducido ningún token."*
+
+    No network request is made. The activity console shows `← error  token vacío`.
+
+    **Cause:** The auth type dropdown is set to **Bearer** but the token input field was left empty. Kunna validates this client-side before attempting the connection.
+
+    **Fix:** Either:
+    - Enter your Bearer token in the **token** input field that appears when Bearer is selected, or
+    - Switch the auth dropdown back to **Sin auth** if the MCP server you are connecting to does not require authentication.
+
+    <Note>
+      In the Kunna MCP Server, authentication is enforced in production mode but bypassed in `development` mode. If you are running the server locally with `NODE_ENV=development`, you can leave auth set to **Sin auth**.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Connection succeeds but tools or prompts list is empty">
+    **Symptom:** The inspector connects successfully — the green server badge appears with the server name and version — but the **Tools** or **Prompts** sidebar shows *"Ninguna"* / *"Ninguno"* even though you expect tools or prompts to be available.
+
+    **Cause:** `McpConnection.connect()` only calls `listTools()` and `listPrompts()` when the server's initialize response includes the corresponding capability key. If `capabilities.tools` or `capabilities.prompts` is absent from the handshake, Kunna skips the list call and returns an empty array for that category.
+
+    This is correct MCP protocol behaviour — Kunna is faithfully reflecting what the server declared.
+
+    **Fix:**
+
+    <Steps>
+      <Step title="Check the server's capability registration">
+        Review the MCP server's source code or documentation to confirm it registers the `tools` and/or `prompts` capabilities in its server configuration. For example, in an MCP SDK server this is typically done via `server.setRequestHandler` or the equivalent capability declaration.
+      </Step>
+      <Step title="Inspect the raw capabilities object">
+        The full capabilities object is returned by `connect()` as `result.capabilities`. You can log it in the browser console by temporarily adding a `console.log` in `mcpClient.js` after the `getServerCapabilities()` call to see exactly what the server advertised.
+      </Step>
+      <Step title="Update the server if necessary">
+        If the server should expose tools or prompts but is not advertising the capability, fix the server-side registration and reconnect.
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="Connection fails with SSE but works with HTTP">
+    **Symptom:** Selecting **SSE** transport and clicking Connect throws an error during the connect phase. Switching to **HTTP** transport with the same URL and credentials succeeds.
+
+    **Cause:** The server was built against the current MCP specification and only exposes the Streamable HTTP transport (`/mcp` endpoint). It does not implement the SSE transport at all, so the SSE handshake fails immediately.
+
+    **Fix:** Use **HTTP** transport. Streamable HTTP is the current MCP standard and is what new server implementations provide. SSE support is maintained in the `@modelcontextprotocol/sdk` for backward compatibility with older servers only.
+
+    <Info>
+      If the server exposes separate endpoints for HTTP and SSE, make sure the URL you are entering corresponds to the correct endpoint for the selected transport. Some servers use `/mcp` for HTTP and `/sse` for SSE.
+    </Info>
+  </Accordion>
+
+  <Accordion title="Connection fails with HTTP but works with SSE">
+    **Symptom:** Selecting **HTTP** transport fails; switching to **SSE** with the same URL succeeds.
+
+    **Cause:** The server was built against an older version of the MCP SDK that only supports the SSE transport. The Streamable HTTP endpoint is not implemented, so the HTTP transport handshake fails.
+
+    **Fix:** Use **SSE** transport when connecting to older MCP servers. This is the expected workflow for backward compatibility — Kunna supports both transports precisely for this reason.
+
+    <Note>
+      You may also need to adjust the URL. Older SSE-only servers often expose their endpoint at a path like `/sse` rather than `/mcp`. Check the server's documentation for the correct SSE endpoint path.
+    </Note>
+  </Accordion>
+
+  <Accordion title="The page shows a blank screen or fails to load at all">
+    **Symptom:** Navigating to `http://localhost:5173` shows a blank page, a browser error page, or a 404.
+
+    **Cause (development):** The Vite dev server is not running. The browser has nothing to connect to on port 5173.
+
+    **Cause (Docker):** The container is not running, or you are trying to access a client-side route directly (e.g. `http://localhost:5173/inspector`) and the container is not up.
+
+    **Fix:**
+
+    <Steps>
+      <Step title="For local development">
+        Start the Vite dev server:
+
+        ```bash
+        npm run dev
+        ```
+
+        Vite will print `Local: http://localhost:5173` when it is ready.
+      </Step>
+      <Step title="For Docker">
+        Check whether the container is running:
+
+        ```bash
+        docker ps
+        ```
+
+        If it is not listed, start it with the correct port mapping:
+
+        ```bash
+        docker run -p 5173:5173 kunnaclientemcp-frontend:latest
+        ```
+
+        The `-p 5173:5173` flag is required — without it, the container's nginx port is not reachable from the host.
+      </Step>
+      <Step title="Verify sub-route access in Docker">
+        If the container is running but a direct sub-route URL returns a blank page, confirm that the nginx config is in place. The `try_files $uri $uri/ /index.html` directive in `nginx.conf` should route all paths back to `index.html` for React Router to handle. If you built a custom image without copying `nginx.conf`, that directive may be missing.
+      </Step>
+    </Steps>
+  </Accordion>
+</AccordionGroup>
+
+## Using the Activity Console for Debugging
+
+The **ConsoleLog** panel at the bottom of the Inspector page is the first place to look when something goes wrong. Every MCP interaction is recorded there with a timestamp, a direction tag, and a message:
+
+| Tag style | Label examples | Meaning |
+|-----------|---------------|---------|
+| `req` (outgoing) | `→ MCP`, `→ CALL`, `→ PROMPT` | A request is being sent to the server |
+| `ok` (success) | `← 200`, `← ok` | The server responded successfully |
+| `err` (failure) | `← error` | The request failed — the `msg` column shows the raw error text |
+
+`← error` entries show the full JavaScript error message, which usually contains enough information to identify the failure category (network error, auth rejection, JSON parse failure, etc.).
+
+<Tip>
+  The "limpiar" button in the console bar clears all entries. Use it to get a clean trace when reproducing a specific issue — it is easier to read a log with only the relevant interactions.
+</Tip>
+
+## Checking Browser DevTools
+
+The activity console captures MCP-level events, but some failures occur at the HTTP level before the SDK can report them. In those cases, browser DevTools give you the full picture.
+
+<Steps>
+  <Step title="Open the Network tab">
+    Press `F12` (or `Cmd+Option+I` on macOS) → **Network** tab. Trigger the connection attempt. Look for the failed request — it will appear in red. Click it to inspect:
+    - **Headers** → confirm `Access-Control-Allow-Origin` is present in the response headers
+    - **Response** → see the raw error body if the server returned one
+    - **Status** → HTTP 401/403 indicates an auth rejection; 404 means the endpoint path is wrong
+  </Step>
+  <Step title="Check the Console tab">
+    Switch to the **Console** tab to look for JavaScript errors that did not surface in the activity log. CORS errors in particular appear here as browser-generated messages like:
+
+    ```
+    Access to fetch at 'http://...' from origin 'http://localhost:5173' has been blocked by CORS policy
+    ```
+  </Step>
+  <Step title="Inspect the SSE stream (SSE transport only)">
+    When using SSE transport, the Network tab will show a long-lived request with type `eventsource`. Click it and open the **EventStream** sub-tab to see the raw SSE messages flowing from the server — useful for diagnosing partial or malformed responses.
+  </Step>
+</Steps>

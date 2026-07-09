@@ -1,0 +1,176 @@
+---
+title: "Configuration Reference for Kunna MCP Client"
+sidebarTitle: "Configuration"
+description: "All configurable aspects of Kunna MCP Client — Vite dev server, build output, Docker port mapping, and nginx SPA routing."
+---
+
+Kunna MCP Client has no runtime environment variables or dotenv files — all configuration lives in `vite.config.js` (build tooling), `Dockerfile` (containerization), and `nginx.conf` (static serving). There is no server process to configure at runtime; the application is a fully static single-page app once built. This page documents every configuration point and explains the reasoning behind each choice.
+
+## Vite Configuration
+
+The Vite configuration in `vite.config.js` is intentionally minimal. The only plugin in use is `@vitejs/plugin-react`, which enables JSX transform, Fast Refresh during development, and Babel-based optimisations in production builds.
+
+```javascript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})
+```
+
+The development server starts on port **5173** by default (Vite's standard). No custom `server.port`, `server.proxy`, or `resolve.alias` entries are needed — the MCP client connects directly to the target server from the browser.
+
+<Note>
+  `vite-plugin-node-polyfills` is listed as a dev dependency (`^0.28.0`). It is not active in the current config but is available if the `@modelcontextprotocol/sdk` bundle ever requires Node.js built-in polyfills (such as `EventEmitter` or `Buffer`) in the browser build. To enable it, add `nodePolyfills()` to the `plugins` array.
+</Note>
+
+## npm Scripts
+
+All development and deployment tasks are available as npm scripts defined in `package.json`.
+
+| Script | Command | Purpose |
+|--------|---------|---------|
+| `dev` | `vite` | Start the Vite dev server with HMR on `http://localhost:5173` |
+| `build` | `vite build` | Compile a production bundle into the `dist/` directory |
+| `preview` | `vite preview` | Serve the `dist/` production bundle locally for inspection |
+| `lint` | `eslint .` | Run ESLint across all source files |
+| `build-docker` | `docker build . -t kunnaclientemcp-frontend:latest` | Build the Docker image with the multi-stage Dockerfile |
+
+<Tip>
+  Run `npm run preview` after `npm run build` to verify that the production bundle behaves identically to the dev server before pushing a Docker image.
+</Tip>
+
+## Docker Configuration
+
+The `Dockerfile` uses a two-stage build. The first stage compiles the React app with Node 20; the second stage copies only the static output into an nginx image, keeping the final image small.
+
+```dockerfile
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npm run build
+
+FROM nginx:stable-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 5173
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+Key settings at a glance:
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| Build base image | `node:20-alpine` | Node 20 LTS, minimal Alpine variant |
+| Build working directory | `/app` | All source and install steps run here |
+| Serve base image | `nginx:stable-alpine` | Lightweight nginx for static hosting |
+| Static file root | `/usr/share/nginx/html` | Receives the Vite `dist/` output |
+| Exposed port | `5173` | Matches the nginx `listen` directive |
+
+To build and run the container:
+
+```bash
+# Build the image
+docker build . -t kunnaclientemcp-frontend:latest
+# Equivalent: npm run build-docker
+
+# Run the container
+docker run -p 5173:5173 kunnaclientemcp-frontend:latest
+```
+
+Once the container is running, open `http://localhost:5173` in your browser.
+
+## nginx Configuration
+
+The custom `nginx.conf` replaces nginx's default configuration entirely to give precise control over the port and SPA routing behaviour.
+
+```nginx
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    server {
+        listen 5173;
+        server_name _;
+
+        root /usr/share/nginx/html;
+        index index.html;
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        error_page 404 /index.html;
+    }
+}
+```
+
+The important directives explained:
+
+<CardGroup cols={2}>
+  <Card title="listen 5173" icon="plug">
+    nginx binds to port `5173` to match the `EXPOSE` instruction in the Dockerfile and the Vite dev server default, so the port is consistent across development and production.
+  </Card>
+  <Card title="try_files … /index.html" icon="route">
+    Critical for React Router. When a user navigates directly to a sub-route (e.g. `/inspector`), nginx looks for a real file first, then falls back to `index.html` — letting React Router handle the path on the client side.
+  </Card>
+  <Card title="include mime.types" icon="file">
+    Ensures JavaScript bundles are served as `application/javascript` and CSS as `text/css`. Without this, some browsers refuse to execute scripts delivered with the wrong MIME type.
+  </Card>
+  <Card title="error_page 404 /index.html" icon="triangle-exclamation">
+    Secondary SPA safety net. Even if the `try_files` directive doesn't catch a missing path, 404 responses are redirected back to `index.html` so React Router can display the correct page or a not-found state.
+  </Card>
+</CardGroup>
+
+## MCP Client Identity
+
+`McpConnection` identifies itself to MCP servers during the initialize handshake using a hardcoded client descriptor defined in `src/lib/mcpClient.js`:
+
+```javascript
+this.client = new Client(
+  { name: "mi-inspector-tfg-web", version: "0.1.0" },
+  { capabilities: {} }
+);
+```
+
+| Field | Value |
+|-------|-------|
+| Client name | `"mi-inspector-tfg-web"` |
+| Client version | `"0.1.0"` |
+| Declared capabilities | `{}` (none — the client is a consumer, not a provider) |
+
+This name and version appear in the MCP server's connection logs alongside the transport type, which can be useful when debugging multi-client scenarios or auditing server access.
+
+<Note>
+  These values are hardcoded constants. If you fork Kunna for a different project, update them in `src/lib/mcpClient.js` to reflect your application's identity.
+</Note>
+
+## Theme Persistence
+
+Kunna supports light and dark themes. The user's preference is persisted across page loads using `localStorage`:
+
+| Detail | Value |
+|--------|-------|
+| `localStorage` key | `"inspector-theme"` |
+| Stored values | `"light"` or `"dark"` |
+| First-visit fallback | `window.matchMedia('(prefers-color-scheme: dark)')` — respects the OS preference |
+
+To reset the stored preference and fall back to the system default, run the following in the browser console:
+
+```javascript
+localStorage.removeItem('inspector-theme');
+```
+
+Then reload the page. The app will re-read the OS colour scheme preference on the next mount.
